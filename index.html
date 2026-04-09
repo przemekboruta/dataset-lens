@@ -4,9 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Dataset Lens</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@500;600;700;800&family=IBM+Plex+Mono:ital,wght@0,400;0,500;1,400&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;1,9..40,400&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
 <style>
 :root {
@@ -21,8 +18,8 @@
   --border-hi:   rgba(140,130,255,0.3);
 
   --txt:         #ddddf0;
-  --txt-2:       #8888b8;
-  --txt-3:       #4e4e78;
+  --txt-2:       #ddddf0;
+  --txt-3:       #ddddf0;
 
   --accent:      #5c4fee;
   --accent-glow: rgba(92,79,238,0.25);
@@ -57,10 +54,24 @@
   --r:  8px;
   --r2: 12px;
   --r3: 16px;
-  --mono: 'IBM Plex Mono', monospace;
-  --sans: 'Syne', sans-serif;
-  --body: 'DM Sans', sans-serif;
+  --mono: ui-monospace, 'Cascadia Code', Menlo, Consolas, 'Courier New', monospace;
+  --sans: Arial, sans-serif;
+  --body: Arial, sans-serif;
   --grid-line: rgba(92,79,238,0.025);
+
+  /* role label colors */
+  --clr-sys-label:  #a78bfa;
+  --clr-usr-label:  #7b8fff;
+  --clr-ast-label:  #ddddf0;
+  --clr-tol-label:  #22d3a5;
+  --clr-tc-name:    #f59e0b;
+
+  /* JSON syntax highlight */
+  --j-k: #9fa3ff;
+  --j-s: #7fffd4;
+  --j-n: #fdb87a;
+  --j-b: #c4b5fd;
+  --j-nil: #6b7280;
 }
 
 /* ─── Light mode overrides ──────────────────────────────────── */
@@ -109,6 +120,20 @@ body.light {
   --tc-bd:       rgba(196,125,10,0.25);
 
   --grid-line:   rgba(80,70,180,0.04);
+
+  /* role label colors — dark enough for white background */
+  --clr-sys-label:  #5b21b6;
+  --clr-usr-label:  #1e3a8a;
+  --clr-ast-label:  #374151;
+  --clr-tol-label:  #065f46;
+  --clr-tc-name:    #78350f;
+
+  /* JSON syntax highlight — readable on white */
+  --j-k: #1d4ed8;
+  --j-s: #15803d;
+  --j-n: #b45309;
+  --j-b: #7c3aed;
+  --j-nil: #6b7280;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -803,20 +828,20 @@ body::before {
 /* role colours */
 .role-system    { background: var(--role-sys-bg); border-color: var(--border); }
 .role-system::before  { background: #8b5cf6; }
-.role-system .msg-role-label { color: #a78bfa; }
+.role-system .msg-role-label { color: var(--clr-sys-label); }
 .role-system .msg-body { color: var(--txt-2); font-style: italic; }
 
 .role-user      { background: var(--role-usr-bg); border-color: var(--border); }
 .role-user::before { background: #4f66ff; }
-.role-user .msg-role-label { color: #7b8fff; }
+.role-user .msg-role-label { color: var(--clr-usr-label); }
 
 .role-assistant { background: var(--role-ast-bg); border-color: var(--border); }
 .role-assistant::before { background: var(--border-med); }
-.role-assistant .msg-role-label { color: var(--txt-2); }
+.role-assistant .msg-role-label { color: var(--clr-ast-label); }
 
 .role-tool      { background: var(--role-tol-bg); border-color: var(--border); }
 .role-tool::before { background: var(--good); }
-.role-tool .msg-role-label { color: var(--good); }
+.role-tool .msg-role-label { color: var(--clr-tol-label); }
 
 .tool-call-id-badge {
   font-family: var(--mono);
@@ -846,7 +871,7 @@ body::before {
   font-family: var(--sans);
   font-size: 11px;
   font-weight: 700;
-  color: var(--warn);
+  color: var(--clr-tc-name);
   letter-spacing: 0.04em;
   display: flex;
   align-items: center;
@@ -869,11 +894,11 @@ body::before {
 }
 
 /* ─ JSON Syntax highlight ────────────────────────────────────── */
-.j-k   { color: #9fa3ff; }     /* key    */
-.j-s   { color: #7fffd4; }     /* string */
-.j-n   { color: #fdb87a; }     /* number */
-.j-b   { color: #c4b5fd; }     /* boolean*/
-.j-nil { color: #6b7280; }     /* null   */
+.j-k   { color: var(--j-k);   }
+.j-s   { color: var(--j-s);   }
+.j-n   { color: var(--j-n);   }
+.j-b   { color: var(--j-b);   }
+.j-nil { color: var(--j-nil); }
 
 /* ─ Image placeholder ─────────────────────────────────────────── */
 .img-ph {
@@ -888,7 +913,7 @@ body::before {
 
 /* ─ Sidebar ──────────────────────────────────────────────────── */
 .v-sidebar {
-  flex: 0 0 300px;
+  flex: 0 0 350px;
   overflow-y: auto;
   overflow-x: hidden;
   padding: 16px;
@@ -1605,18 +1630,33 @@ function renderMessage(msg, index) {
 
   let body = '';
   if (msg.content !== undefined && msg.content !== null) {
-    const contentHtml = renderContent(msg.content);
     const isLongSystem = role === 'system' && typeof msg.content === 'string' && msg.content.length > 300;
-    if (isLongSystem) {
-      body += `<div class="msg-body collapsible">${contentHtml}</div><span class="msg-expand-btn">↓ Show more</span>`;
+    if (role === 'tool') {
+      body += renderToolResultContent(msg.content);
+    } else if (isLongSystem) {
+      body += `<div class="msg-body collapsible">${renderContent(msg.content)}</div><span class="msg-expand-btn">↓ Show more</span>`;
     } else {
-      body += `<div class="msg-body">${contentHtml}</div>`;
+      body += `<div class="msg-body">${renderContent(msg.content)}</div>`;
     }
   }
   if (msg.tool_calls && msg.tool_calls.length) {
     body += renderToolCalls(msg.tool_calls);
   }
   return `<div class="msg-card ${roleClass}" data-index="${index}">${header}${body}</div>`;
+}
+
+function renderToolResultContent(content) {
+  if (typeof content === 'string') {
+    const t = content.trim();
+    if (t.startsWith('{') || t.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(t);
+        return `<pre class="tc-args">${syntaxHighlight(parsed)}</pre>`;
+      } catch {}
+    }
+    return `<div class="msg-body">${renderContent(content)}</div>`;
+  }
+  return `<div class="msg-body">${renderContent(content)}</div>`;
 }
 
 function renderContent(content) {
