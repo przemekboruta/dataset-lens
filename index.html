@@ -658,23 +658,6 @@ body::before {
   gap: 5px;
   min-width: 0;
 }
-.v-filename-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.save-status {
-  font-size: 10px;
-  font-family: var(--mono);
-  padding: 2px 8px;
-  border-radius: 4px;
-  white-space: nowrap;
-}
-.save-status.pending { color: var(--warn);  background: var(--warn-dim); }
-.save-status.saving  { color: var(--txt-2); background: var(--surf-3);   }
-.save-status.saved   { color: var(--good);  background: var(--good-dim); }
-.save-status.error   { color: var(--bad);   background: var(--bad-dim);  }
-
 .v-filename {
   font-size: 11px;
   color: var(--txt-3);
@@ -1251,10 +1234,7 @@ body::before {
     <div class="v-logo"><div class="dot"></div>Lens</div>
 
     <div class="v-progress-area">
-      <div class="v-filename-row">
-        <div class="v-filename" id="v-filename"></div>
-        <div class="save-status" id="save-status" style="display:none"></div>
-      </div>
+      <div class="v-filename" id="v-filename"></div>
       <div class="v-progress-row">
         <div class="v-progress-bar"><div class="v-progress-fill" id="v-progress-fill"></div></div>
         <span class="v-counter" id="v-counter"></span>
@@ -1349,9 +1329,6 @@ const state = {
   firstExample:   null,      // used for field mapping screen
   renderMd:       true,      // markdown rendering toggle
   labels:         new Map(), // index → 'good' | 'bad'
-  fileHandle:     null,      // FileSystemFileHandle (Chrome/Edge only)
-  saveTimer:      null,      // debounce handle
-  writing:        false,     // prevent concurrent writes
   messagesField:  null,
   toolsField:     null,
   labelField:     'review_label',
@@ -1398,26 +1375,13 @@ uploadZone.addEventListener('drop', e => {
 fileInput.addEventListener('change', e => {
   if (e.target.files[0]) handleFile(e.target.files[0]);
 });
-uploadZone.addEventListener('click', async e => {
+uploadZone.addEventListener('click', e => {
   if (e.target === uploadZone ||
       e.target.classList.contains('upload-icon') ||
       e.target.classList.contains('upload-title') ||
       e.target.classList.contains('upload-sub')) {
+    fileInput.click();
     e.preventDefault();
-    if (window.showOpenFilePicker) {
-      try {
-        const [handle] = await showOpenFilePicker({
-          types: [{ description: 'JSONL files', accept: { 'application/x-ndjson': ['.jsonl'], 'text/plain': ['.jsonl'] } }]
-        });
-        state.fileHandle = handle;
-        const file = await handle.getFile();
-        handleFile(file);
-      } catch(err) {
-        if (err.name !== 'AbortError') showUploadError(`Error: ${err.message}`);
-      }
-    } else {
-      fileInput.click();
-    }
   }
 });
 
@@ -1581,8 +1545,6 @@ async function proceedToViewer() {
   state.labelField     = document.getElementById('label-field-input').value.trim() || 'review_label';
   state.currentIndex   = 0;
   state.currentExample = state.firstExample;
-  // Show/hide export button based on whether auto-save is available
-  document.getElementById('btn-export').style.display = state.fileHandle ? 'none' : '';
   renderViewer();
   showScreen('screen-viewer');
 }
@@ -1940,63 +1902,9 @@ function setLabel(lbl) {
   statusEl.className   = 'label-status ' + (l || 'none');
   statusEl.textContent = l === 'good' ? '✓ Good' : l === 'bad' ? '✗ Bad' : '—';
   document.getElementById('v-labeled').textContent = state.labels.size ? `${state.labels.size} labeled` : '';
-
-  if (state.fileHandle) scheduleSave();
 }
 
-/* ─── Auto-save (File System Access API) ────────────────────── */
-function setSaveStatus(status, msg) {
-  const el = document.getElementById('save-status');
-  if (!el) return;
-  const labels = { pending: '● unsaved', saving: '◌ saving…', saved: '✓ saved', error: '✗ error' };
-  el.style.display = '';
-  el.className = `save-status ${status}`;
-  el.textContent = status === 'error' ? `✗ ${msg}` : labels[status];
-  if (status === 'saved') setTimeout(() => { el.style.display = 'none'; }, 3000);
-}
-
-function scheduleSave() {
-  setSaveStatus('pending');
-  clearTimeout(state.saveTimer);
-  state.saveTimer = setTimeout(writeToFile, 800);
-}
-
-async function writeToFile() {
-  if (state.writing) { state.saveTimer = setTimeout(writeToFile, 500); return; }
-  state.writing = true;
-  setSaveStatus('saving');
-  try {
-    // Patch approach: read from original state.file (lineRanges always valid),
-    // replace only labeled lines. state.file is never updated so offsets stay correct.
-    const sortedLabels = [...state.labels.entries()].sort((a, b) => a[0] - b[0]);
-    const blobParts = [];
-    let cursor = 0;
-
-    for (const [index, label] of sortedLabels) {
-      const { start, end } = state.lineRanges[index];
-      if (start > cursor) blobParts.push(state.file.slice(cursor, start));
-      const ex = await readLine(index);
-      ex[state.labelField] = label;
-      blobParts.push(JSON.stringify(ex) + '\n');
-      cursor = (index + 1 < state.lineRanges.length)
-        ? state.lineRanges[index + 1].start
-        : state.file.size;
-    }
-    if (cursor < state.file.size) blobParts.push(state.file.slice(cursor));
-
-    const blob     = new Blob(blobParts, { type: 'application/x-ndjson' });
-    const writable = await state.fileHandle.createWritable();
-    await writable.write(blob);
-    await writable.close();
-    setSaveStatus('saved');
-  } catch(err) {
-    setSaveStatus('error', err.message);
-  } finally {
-    state.writing = false;
-  }
-}
-
-/* ─── Export (fallback for browsers without File System Access API) ── */
+/* ─── Export ─────────────────────────────────────────────────── */
 async function exportJSONL() {
   const btn  = document.getElementById('btn-export');
   btn.disabled  = true;
