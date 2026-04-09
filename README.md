@@ -4,7 +4,7 @@ A fast, single-file browser tool for reviewing and labeling JSONL datasets — b
 
 No install, no server. Open `index.html` in any browser.
 
-![Dataset Lens screenshot](https://raw.githubusercontent.com/przemekboruta/data-viewer/master/screenshot.png)
+![Dataset Lens screenshot](https://raw.githubusercontent.com/przemekboruta/dataset-lens/master/screenshot.png)
 
 ## Features
 
