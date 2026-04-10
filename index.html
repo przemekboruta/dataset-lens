@@ -445,7 +445,6 @@ body::before {
   border-radius: var(--r2);
   padding: 14px 16px;
   background: var(--surf-1);
-  cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
   position: relative;
   overflow: hidden;
@@ -458,12 +457,13 @@ body::before {
   background: transparent;
   transition: background 0.15s;
 }
-.field-card:hover { border-color: var(--border-med); background: var(--surf-2); }
 
 .field-card.sel-messages { border-color: var(--accent-bd); background: var(--accent-dim); }
 .field-card.sel-messages::before { background: var(--accent); }
 .field-card.sel-tools { border-color: var(--warn-bd); background: var(--warn-dim); }
 .field-card.sel-tools::before { background: var(--warn); }
+.field-card.sel-meta { border-color: var(--good-bd); background: var(--good-dim); }
+.field-card.sel-meta::before { background: var(--good); }
 
 .field-card-name {
   font-family: var(--mono);
@@ -508,10 +508,13 @@ body::before {
   border-radius: 4px;
   border: 1px solid transparent;
   opacity: 0.4;
-  transition: opacity 0.15s;
+  transition: opacity 0.15s, background 0.15s;
+  cursor: pointer;
 }
+.fc-badge:hover { opacity: 0.75; }
 .fc-badge.msg  { border-color: var(--accent-bd);  color: var(--accent); }
 .fc-badge.tools{ border-color: var(--warn-bd);    color: var(--warn);   }
+.fc-badge.meta { border-color: var(--good-bd);    color: var(--good);   }
 .fc-badge.active{ opacity: 1; }
 
 .mapping-options {
@@ -1052,6 +1055,43 @@ body::before {
   font-style: italic;
 }
 
+/* ─ Metadata panel ────────────────────────────────────────────── */
+.meta-row {
+  display: flex;
+  gap: 10px;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(140,130,255,0.05);
+  font-size: 11px;
+  align-items: baseline;
+}
+.meta-row:last-child { border-bottom: none; }
+.meta-key {
+  font-family: var(--sans);
+  font-weight: 600;
+  color: var(--txt-3);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+  min-width: 72px;
+}
+.meta-val {
+  font-family: var(--mono);
+  color: var(--txt-2);
+  word-break: break-all;
+  line-height: 1.5;
+}
+.meta-group-label {
+  font-family: var(--sans);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--good);
+  margin: 10px 0 4px;
+}
+.meta-group-label:first-child { margin-top: 0; }
+
 /* ─ Viewer footer ────────────────────────────────────────────── */
 .v-footer {
   height: 60px;
@@ -1199,8 +1239,10 @@ body::before {
     <div>
       <div class="mapping-section-title">Select fields</div>
       <div class="mapping-hint" style="margin-bottom:14px">
-        Click a field to set it as <strong style="color:var(--accent)">messages</strong> (required) or <strong style="color:var(--warn)">tools</strong> (optional).
-        First click → messages &nbsp;·&nbsp; Second click → tools &nbsp;·&nbsp; Third click → deselect.
+        Click the <strong style="color:var(--accent)">messages</strong> badge to select the messages field (required),
+        the <strong style="color:var(--warn)">tools</strong> badge to select the tools field (optional),
+        or the <strong style="color:var(--good)">meta</strong> badge to show a field's values in the metadata sidebar panel (multi-select).
+        Clicking an active badge deselects it.
       </div>
       <div class="field-grid" id="mapping-fields"></div>
     </div>
@@ -1285,6 +1327,15 @@ body::before {
         </div>
         <div class="sidebar-card-body" id="val-body"></div>
       </div>
+
+      <!-- Metadata card -->
+      <div class="sidebar-card" id="sidebar-metadata" style="display:none">
+        <div class="sidebar-card-header" onclick="toggleCard('meta-body','meta-toggle')">
+          <span>Metadata</span>
+          <span class="sc-toggle open" id="meta-toggle">▾</span>
+        </div>
+        <div class="sidebar-card-body" id="meta-body"></div>
+      </div>
     </div>
   </div>
 
@@ -1329,10 +1380,11 @@ const state = {
   firstExample:   null,      // used for field mapping screen
   renderMd:       true,      // markdown rendering toggle
   labels:         new Map(), // index → 'good' | 'bad'
-  messagesField:  null,
-  toolsField:     null,
-  labelField:     'review_label',
-  filename:       ''
+  messagesField:   null,
+  toolsField:      null,
+  metadataFields:  new Set(),
+  labelField:      'review_label',
+  filename:        ''
 };
 
 /* ─── Theme ──────────────────────────────────────────────────── */
@@ -1488,8 +1540,14 @@ function buildMappingScreen() {
   const ex = state.firstExample;
   const msgNames  = ['messages','conversations','conversation','turns'];
   const toolNames = ['tools','functions','tools_list'];
+  const metaNames = ['metadata','meta','extra','extras','info'];
   state.messagesField = Object.keys(ex).find(k => msgNames.includes(k))  || null;
   state.toolsField    = Object.keys(ex).find(k => toolNames.includes(k)) || null;
+  state.metadataFields.clear();
+  Object.keys(ex).forEach(k => {
+    if (metaNames.includes(k) && ex[k] !== null && typeof ex[k] === 'object' && !Array.isArray(ex[k]))
+      state.metadataFields.add(k);
+  });
   renderFieldCards();
 }
 
@@ -1497,34 +1555,42 @@ function renderFieldCards() {
   const ex        = state.firstExample;
   const container = document.getElementById('mapping-fields');
   container.innerHTML = Object.entries(ex).map(([key, val]) => {
-    const type   = Array.isArray(val) ? 'array' : (val === null ? 'null' : typeof val);
+    const type    = Array.isArray(val) ? 'array' : (val === null ? 'null' : typeof val);
     const preview = getPreview(val);
     const isMsg   = key === state.messagesField;
     const isTool  = key === state.toolsField;
+    const isMeta  = state.metadataFields.has(key);
+    const cardCls = [isMsg?'sel-messages':'', isTool?'sel-tools':'', isMeta?'sel-meta':''].filter(Boolean).join(' ');
     return `
-      <div class="field-card ${isMsg?'sel-messages':''} ${isTool?'sel-tools':''}"
-           data-key="${escAttr(key)}" onclick="toggleFieldSel('${escAttr(key)}')">
+      <div class="field-card ${cardCls}" data-key="${escAttr(key)}">
         <div class="field-card-name">${escHtml(key)}</div>
         <span class="field-card-type type-${type}">${type}${Array.isArray(val)?` [${val.length}]`:''}</span>
         <div class="field-card-preview">${escHtml(preview)}</div>
         <div class="field-card-badges">
-          <span class="fc-badge msg ${isMsg?'active':''}">messages</span>
-          <span class="fc-badge tools ${isTool?'active':''}">tools</span>
+          <span class="fc-badge msg ${isMsg?'active':''}" onclick="toggleMsgSel('${escAttr(key)}')" title="Use as messages field">messages</span>
+          <span class="fc-badge tools ${isTool?'active':''}" onclick="toggleToolsSel('${escAttr(key)}')" title="Use as tools field">tools</span>
+          <span class="fc-badge meta ${isMeta?'active':''}" onclick="toggleMetaSel('${escAttr(key)}')" title="Show in metadata sidebar">meta</span>
         </div>
       </div>`;
   }).join('');
   updateMappingStatus();
 }
 
-function toggleFieldSel(key) {
-  if (key === state.messagesField) {
-    state.messagesField = null;
-    state.toolsField = (state.toolsField !== key) ? key : null;
-  } else if (key === state.toolsField) {
-    state.toolsField = null;
-  } else {
-    state.messagesField = key;
-  }
+function toggleMsgSel(key) {
+  if (state.messagesField === key) { state.messagesField = null; }
+  else { state.messagesField = key; if (state.toolsField === key) state.toolsField = null; }
+  renderFieldCards();
+}
+
+function toggleToolsSel(key) {
+  if (state.toolsField === key) { state.toolsField = null; }
+  else { state.toolsField = key; if (state.messagesField === key) state.messagesField = null; }
+  renderFieldCards();
+}
+
+function toggleMetaSel(key) {
+  if (state.metadataFields.has(key)) state.metadataFields.delete(key);
+  else state.metadataFields.add(key);
   renderFieldCards();
 }
 
@@ -1583,11 +1649,12 @@ function renderViewer() {
   renderConversation(ex);
   renderToolsSidebar(ex);
   renderValidation(ex);
+  renderMetadataSidebar(ex);
 }
 
 function renderExtraFields(ex) {
   const bar  = document.getElementById('v-extra-fields');
-  const skip = new Set([state.messagesField, state.toolsField, state.labelField]);
+  const skip = new Set([state.messagesField, state.toolsField, state.labelField, ...state.metadataFields]);
   const extras = Object.entries(ex).filter(([k]) => !skip.has(k));
   if (!extras.length) { bar.style.display = 'none'; return; }
   bar.style.display = 'flex';
@@ -1856,6 +1923,34 @@ function renderValidation(ex) {
   if (!v.hasTools && hasToolCalls) {
     body.innerHTML += `<div class="val-warn-item" style="margin-top:6px">No tools field selected — cannot validate tool names or argument schemas.</div>`;
   }
+}
+
+/* ─── Metadata sidebar ───────────────────────────────────────── */
+function renderMetadataSidebar(ex) {
+  const card = document.getElementById('sidebar-metadata');
+  const body = document.getElementById('meta-body');
+  if (!state.metadataFields.size) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+
+  const parts = [];
+  for (const field of state.metadataFields) {
+    const val = ex[field];
+    if (state.metadataFields.size > 1) {
+      parts.push(`<div class="meta-group-label">${escHtml(field)}</div>`);
+    }
+    if (val !== null && typeof val === 'object' && !Array.isArray(val)) {
+      // Flatten dict key-value pairs
+      const rows = Object.entries(val).map(([k, v]) => {
+        const disp = typeof v === 'object' ? JSON.stringify(v) : String(v ?? '');
+        return `<div class="meta-row"><span class="meta-key">${escHtml(k)}</span><span class="meta-val">${escHtml(disp)}</span></div>`;
+      }).join('');
+      parts.push(rows || `<div class="no-tools">Empty object.</div>`);
+    } else {
+      const disp = val === null ? 'null' : (typeof val === 'object' ? JSON.stringify(val) : String(val));
+      parts.push(`<div class="meta-row"><span class="meta-key">${escHtml(field)}</span><span class="meta-val">${escHtml(disp)}</span></div>`);
+    }
+  }
+  body.innerHTML = parts.join('');
 }
 
 /* ─── Navigation & labeling ──────────────────────────────────── */
