@@ -914,6 +914,23 @@ body::before {
   font-size: 11px;
 }
 
+/* ─ Sidebar resizer ──────────────────────────────────────────── */
+.sidebar-resizer {
+  flex: 0 0 5px;
+  cursor: col-resize;
+  position: relative;
+  background: transparent;
+  transition: background 0.15s;
+  z-index: 2;
+}
+.sidebar-resizer::after {
+  content: '';
+  position: absolute;
+  inset: 0 -3px;
+}
+.sidebar-resizer:hover { background: var(--border-med); }
+.sidebar-resizer.resizing { background: var(--accent-bd); }
+
 /* ─ Sidebar ──────────────────────────────────────────────────── */
 .v-sidebar {
   flex: 0 0 350px;
@@ -925,6 +942,8 @@ body::before {
   gap: 10px;
   background: var(--surf-0);
   min-height: 0;
+  min-width: 180px;
+  max-width: 700px;
 }
 
 .sidebar-card {
@@ -1308,8 +1327,11 @@ body::before {
     <!-- Conversation -->
     <div class="v-convo" id="v-convo"></div>
 
+    <!-- Sidebar resizer -->
+    <div class="sidebar-resizer" id="sidebar-resizer"></div>
+
     <!-- Sidebar -->
-    <div class="v-sidebar">
+    <div class="v-sidebar" id="v-sidebar">
       <!-- Tools card -->
       <div class="sidebar-card" id="sidebar-tools" style="display:none">
         <div class="sidebar-card-header" onclick="toggleCard('tools-body','tools-toggle')">
@@ -1926,6 +1948,20 @@ function renderValidation(ex) {
 }
 
 /* ─── Metadata sidebar ───────────────────────────────────────── */
+function flattenObject(obj, prefix) {
+  const rows = [];
+  for (const [k, v] of Object.entries(obj)) {
+    const key = prefix ? `${prefix}.${k}` : k;
+    if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+      rows.push(...flattenObject(v, key));
+    } else {
+      const disp = v === null ? 'null' : (Array.isArray(v) ? JSON.stringify(v) : String(v));
+      rows.push([key, disp]);
+    }
+  }
+  return rows;
+}
+
 function renderMetadataSidebar(ex) {
   const card = document.getElementById('sidebar-metadata');
   const body = document.getElementById('meta-body');
@@ -1939,12 +1975,14 @@ function renderMetadataSidebar(ex) {
       parts.push(`<div class="meta-group-label">${escHtml(field)}</div>`);
     }
     if (val !== null && typeof val === 'object' && !Array.isArray(val)) {
-      // Flatten dict key-value pairs
-      const rows = Object.entries(val).map(([k, v]) => {
-        const disp = typeof v === 'object' ? JSON.stringify(v) : String(v ?? '');
-        return `<div class="meta-row"><span class="meta-key">${escHtml(k)}</span><span class="meta-val">${escHtml(disp)}</span></div>`;
-      }).join('');
-      parts.push(rows || `<div class="no-tools">Empty object.</div>`);
+      const rows = flattenObject(val, '');
+      if (rows.length) {
+        parts.push(rows.map(([k, v]) =>
+          `<div class="meta-row"><span class="meta-key">${escHtml(k)}</span><span class="meta-val">${escHtml(v)}</span></div>`
+        ).join(''));
+      } else {
+        parts.push(`<div class="no-tools">Empty object.</div>`);
+      }
     } else {
       const disp = val === null ? 'null' : (typeof val === 'object' ? JSON.stringify(val) : String(val));
       parts.push(`<div class="meta-row"><span class="meta-key">${escHtml(field)}</span><span class="meta-val">${escHtml(disp)}</span></div>`);
@@ -2091,6 +2129,41 @@ function getPreview(val) {
   if (typeof val === 'object') return JSON.stringify(val).slice(0, 60);
   return String(val).slice(0, 60);
 }
+/* ─── Sidebar resize ─────────────────────────────────────────── */
+(function initSidebarResize() {
+  const resizer = document.getElementById('sidebar-resizer');
+  const sidebar = document.getElementById('v-sidebar');
+  const STORAGE_KEY = 'lens-sidebar-width';
+
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (saved) sidebar.style.flex = `0 0 ${saved}px`;
+
+  let startX, startWidth;
+
+  resizer.addEventListener('mousedown', e => {
+    startX     = e.clientX;
+    startWidth = sidebar.offsetWidth;
+    resizer.classList.add('resizing');
+    document.body.style.cursor    = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!resizer.classList.contains('resizing')) return;
+    const w = Math.min(Math.max(startWidth - (e.clientX - startX), 180), 700);
+    sidebar.style.flex = `0 0 ${w}px`;
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!resizer.classList.contains('resizing')) return;
+    resizer.classList.remove('resizing');
+    document.body.style.cursor    = '';
+    document.body.style.userSelect = '';
+    localStorage.setItem(STORAGE_KEY, sidebar.offsetWidth);
+  });
+})();
+
 function syntaxHighlight(obj) {
   const str = JSON.stringify(obj, null, 2);
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
